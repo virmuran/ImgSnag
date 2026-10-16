@@ -653,13 +653,16 @@ $('#saveBtn').onclick = function(){
   });
 };
 /* 复制：复制的是这篇文章的**名字**，不含日期编号（后端给的 title 本来就是原文，
-   从历史打开时那边也已剥掉前缀）。没桥时给一句人话，而不是点了没反应。 */
+   从历史打开时那边也已剥掉前缀）。有来源时**再补一行来源** —— 标题 + 出处
+   一次贴完，不用手动敲。没桥时给一句人话，而不是点了没反应。 */
 $('#copyBtn').onclick = function(){
   var t = (st.title || '').trim();
   if (!t){ toast('还没有标题可复制'); return; }
+  var line = (st.creditLine || '').trim();
+  var text = line ? (t + '\n' + line) : t;
   // 长标题塞进 toast 会把提示条撑爆，回显时截一下（复制进剪贴板的仍是全文）
   var shown = t.length > 14 ? t.slice(0, 14) + '…' : t;
-  toast(copyText(t) ? ('已复制：' + shown) : '复制失败 —— 这个按钮要在 App 里用');
+  toast(copyText(text) ? ('已复制：' + shown) : '复制失败 —— 这个按钮要在 App 里用');
 };
 
 function buildGrid(){

@@ -881,6 +881,13 @@ def test_credit_and_referer():
         check('版权' in st.get('credit', ''), '来源提示里带版权提醒')
         check('微信公众号' in st.get('credit', ''), '来源提示里写的是适配器给的站点名')
 
+        # 复制用的那一行：与提示同源，但**不带**版权提醒 —— 用户要贴出去的是
+        # 标题和出处，混一句"请勿用于商业用途"进去反而得手动删。
+        eq(st.get('creditLine'), '来源：微信公众号',
+           f'复制用的来源行没有署名时只写站点名：{st.get("creditLine")!r}')
+        check('版权' not in st.get('creditLine', ''),
+              '复制用的来源行里不含版权提醒')
+
         net.reset()
         cli.post('/api/save', {'idxs': [1, 2]})
         cli.wait(want=('saved', 'error'))
@@ -897,6 +904,8 @@ def test_credit_and_referer():
         credit = st.get('credit', '')
         eq(credit.split(' —')[0], '图片来源：洛城雪Yuki（cosmeitu.com）',
            f'来源用的是适配器给的署名与站点名：{credit!r}')
+        eq(st.get('creditLine'), '图片来源：洛城雪Yuki（cosmeitu.com）',
+           '复制用的来源行与提示同源（去掉提醒尾巴）')
 
         net.reset()
         cli.post('/api/save', {'idxs': [1, 2]})
@@ -934,6 +943,8 @@ def test_credit_and_referer():
         st = cli.wait(want=('ready', 'error'))
         check('cosmeitu' not in st.get('credit', ''),
               f'换了文章之后不残留上一篇的来源：{st.get("credit")!r}')
+        check('cosmeitu' not in st.get('creditLine', ''),
+              f'复制用的来源行同样跟着换：{st.get("creditLine")!r}')
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -1366,6 +1377,9 @@ def test_page_contract():
     # 剪贴板与偏好
     check(re.search(r'window\.[A-Za-z0-9_$]+\.read\(\)', page) is not None,
           '页面会去读那个剪贴板桥')
+    # 「复制」把来源一起带走（后端给纯来源行，提醒那句不混进去）。
+    # 查 `st.creditLine` 而不是裸 `'creditLine'`：后者会被任何同名字符串蹭过。
+    check('.creditLine' in page, '复制时连来源一起，用的是状态里的纯来源行')
     check("'/api/settings'," in page, '页面能改偏好')
     check('id="setOriginal"' in page, '有"保存原图"开关')
     check('id="setSkipTiny"' in page, '有"自动跳过小图"开关')

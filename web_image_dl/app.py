@@ -436,9 +436,11 @@ class ImageDownloaderApp(QMainWindow):
         self.save_as_btn.clicked.connect(self._on_download_as)
         action_row.addWidget(self.save_as_btn)
 
-        # 「复制」紧挨下载按钮（用户指定）。复制出来的是**不含日期编号**的纯标题：
+        # 「复制」紧挨下载按钮（用户指定）。复制出来的是**不含日期编号**的标题：
         # 图库里那个文件夹名长这样 `2026-10-07_153045_秋天的第一杯奶茶`，
         # 而用户要的只是后半截。剥前缀的逻辑复用 library.title_from_folder（浏览历史时）。
+        # 有来源（站点/作者）时再补第二行 —— 见 `_copy_text`，那样"标题 + 出处"
+        # 能整段贴出去，不用手动敲来源。
         #
         # 这里曾经**只在有标题时出现**（当时动作栏 11 个控件、最小宽度 796px，
         # 常驻一个按钮会顶到 868，超出"笔记本半屏"这个目标）。后来把全栏文案压到
@@ -1326,13 +1328,29 @@ class ImageDownloaderApp(QMainWindow):
         """当前站点的界面名。没有适配器（如浏览历史）时给空串，由 credit_line 兜底"""
         return getattr(self._adapter, "display_name", "") or ""
 
+    def _credit_text(self) -> str:
+        """当前这次的来源说明（**不含版权提醒**）。说不出来源就返回空串。
+
+        界面上那行提示与「复制」都从这里取 —— 判据只有这一处，不会出现
+        "界面没显示来源、复制出来却有"这种两处不一致。
+
+        两种情况说不出来源：浏览本地图库时，那是"某个目录里的图"，没有站点概念；
+        解析出 0 张图时，也没什么出处可言。
+        """
+        if self._browsing_history or not self.images:
+            return ''
+        author = (self._article_author or '').strip()
+        site = self._site_name()
+        if not (author or site):
+            return ''
+        return credit_line(author, site)
+
     def _refresh_credit(self):
         """按当前来源刷新那一行提示。没有可说的就藏起来，而不是显示一句空话。"""
-        if self._browsing_history or not self.images:
-            # 浏览本地图库时是"某个目录里的图"，没有站点概念，别硬套一个来源
+        line = self._credit_text()
+        if not line:
             self.credit_label.setVisible(False)
             return
-        line = credit_line(self._article_author, self._site_name())
         self.credit_label.setText(f"{line} — {CREDIT_NOTICE}")
         self.credit_label.setVisible(True)
 
@@ -1461,33 +1479,54 @@ class ImageDownloaderApp(QMainWindow):
         """
         return (self._article_title or "").strip()
 
+    def _copy_text(self) -> str:
+        """点「复制」进剪贴板的内容 —— 标题，有来源时**再补一行来源**。
+
+        第二行与界面上那行提示同一个来源（都走 `_credit_text`），只是不带那句
+        版权提醒：提醒是给人看的界面文案，而用户要贴出去的是标题和出处，
+        混一句"请勿用于商业用途"进去反而得手动删。
+
+        说不出来源时**只给标题这一行**，不留一个空的「来源：」——
+        浏览本地图库时就是这种情况。
+        """
+        title = self._copy_title_text()
+        if not title:
+            return ''
+        credit = self._credit_text()
+        return f'{title}\n{credit}' if credit else title
+
     def _update_copy_btn(self):
-        """有标题才让点，并把标题写进 tooltip。
+        """有标题才让点，并把将要复制的内容写进 tooltip。
 
         按钮**常驻**（没标题时置灰）：全栏文案压到两三个字之后，最小宽度从 796 降到 680，
         常驻也放得下了 —— 一个位置固定的按钮比一个忽隐忽现的好找。
 
         tooltip 不只是说明：**结果页并不显示标题**，这是点下去之前唯一能看到
-        "将要复制什么"的地方 —— 给不出预览，至少要说清它是什么。
+        "将要复制什么"的地方 —— 给不出预览，至少要说清它是什么。有来源时把来源
+        一并列出来，用户点之前就知道会多一行。
         """
-        title = self._copy_title_text()
-        self.copy_title_btn.setEnabled(bool(title))
-        self.copy_title_btn.setToolTip(
-            f"复制这个名字（已去掉日期编号）：\n{title}" if title
-            else "解析完成后可以复制这篇文章的名字（自动去掉前面的日期编号）"
-        )
+        text = self._copy_text()
+        self.copy_title_btn.setEnabled(bool(text))
+        if not text:
+            tip = "解析完成后可以复制这篇文章的名字（自动去掉前面的日期编号）"
+        elif '\n' in text:
+            tip = f"复制标题与来源：\n{text}"
+        else:
+            tip = f"复制这个名字（已去掉日期编号）：\n{text}"
+        self.copy_title_btn.setToolTip(tip)
 
     def _on_copy_title(self):
-        """把标题放进剪贴板。
+        """把标题（有来源时连来源一起）放进剪贴板。
 
-        标题**当场再读一次**，而不是用按钮那一刻的状态 —— 状态万一漂了，
+        内容**当场再读一次**，而不是用按钮那一刻的状态 —— 状态万一漂了，
         复制错东西比复制不了更糟。
         """
-        title = self._copy_title_text()
-        if not title:
+        text = self._copy_text()
+        if not text:
             return
-        QApplication.clipboard().setText(title)
-        self.status.showMessage(f"已复制标题：{title}")
+        QApplication.clipboard().setText(text)
+        title, _, rest = text.partition('\n')
+        self.status.showMessage(f"已复制{'标题与来源' if rest else '标题'}：{title}")
 
     def _last_save_dir(self) -> str:
         """上次保存目录；已经不在了就回空串（交给系统默认位置，别弹个不存在的路径）"""

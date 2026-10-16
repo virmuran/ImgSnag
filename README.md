@@ -13,7 +13,7 @@
     <img alt="deps" src="https://img.shields.io/badge/%E4%BE%9D%E8%B5%96-requests%20%2B%20PySide6--Essentials-blue">
 </div>
 <div>
-    <img alt="version" src="https://img.shields.io/badge/version-2.2.0-green">
+    <img alt="version" src="https://img.shields.io/badge/version-2.3.0-green">
     <img alt="stars" src="https://img.shields.io/github/stars/virmuran/ImgSnag?style=social">
 </div>
 <br>
@@ -161,6 +161,8 @@ python -m venv .venv
 - 查看图片保存位置：动作栏的「图库」，优先打开最近一次落盘的文件夹；想换地方在侧边栏「设置」→「图库保存位置」里改（默认在系统「图片」下的 `ImgSnag`）
 - 复制文章名：动作栏的「复制」输出**不带日期编号**的名称 ——
   图库文件夹名为 `2026-09-18_164633_秋天的第一杯奶茶`，复制结果为「秋天的第一杯奶茶」。
+  有来源时**下方再带一行来源**（如 `图片来源：某某（站点名）`），标题与出处一次贴完；
+  说不出来源时不补空行。
 
 状态栏显示进度与结果统计（共几张、几张有效、几张重复）。写盘与格式转换在后台进行，
 图多时界面保持响应，按钮上显示「保存中 3/20」等进度。

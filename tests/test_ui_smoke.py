@@ -261,6 +261,7 @@ def test_download_through_gui(app):
 
     from web_image_dl.app import ImageDownloaderApp
     from web_image_dl.settings import K_LIBRARY_DIR, settings
+    from web_image_dl.sites import weixin
     from web_image_dl.worker import ImageInfo
 
     print('\n[UI-8] 点保存后图片真的落盘（钉住 SaveWorker 被正确引入）')
@@ -331,12 +332,18 @@ def test_download_through_gui(app):
         # 「解析收尾一定会刷新它」另有一条在 UI-27 里钉着。
         # 判据用 isHidden 而不是 isVisible —— 离屏下主窗口没有 show()，整条可见性
         # 链恒为 False，拿 isVisible 来断言就成了一条永远红的假断言。
+        #
+        # 适配器要**显式补上**：真实流程里它是 `_start_worker` 一进来就设好的
+        # （界面靠它拿站点名），而这里是手工造的图、没经过 worker —— 不补就走的是
+        # 「说不出来源」那条分支，测的不是"解析完该看到什么"。
+        win._adapter = weixin
         win._on_all_done([it.info for it in win.thumb_items])
         QApplication.processEvents()
         check(not win.credit_label.isHidden(), '界面上显示了来源与版权提示')
         ctext = win.credit_label.text()
         check('来源' in ctext, f'提示里写了来源（{ctext[:24]!r}）')
         check('版权' in ctext, '提示里带版权提醒')
+        win._adapter = None       # 还原：下面保存流程仍走"没有适配器"那条老路
 
         eq(got, ['img_01.png', 'img_02.png', 'img_03.png'], '三张图按序号落进子文件夹')
         for name in got:
@@ -2022,7 +2029,7 @@ def test_reparse_keeps_download(app):
 
 
 def test_copy_title(app):
-    """「复制」按钮（UI-28）：一键复制这次解析的文章名字。
+    """「复制」按钮（UI-28）：一键复制这次解析的文章名字（有来源时连来源一起）。
 
     名字在两个场景里含义不同，两处都要钉：
       a) 刚解析完 → 复制的是**完整原文标题**（worker 取到的那个：没截断、没删字符）；
@@ -2031,9 +2038,12 @@ def test_copy_title(app):
          「不要前面的日期编号」正是提这个需求的原因；
       c) 没有标题时按钮**置灰但常驻**：全栏文案压到两三个字后，最小宽度从 796
          降到 680（正好是"笔记本半屏"那个设计目标），常驻放得下。
+      d) 有来源时**多一行来源**（标题 + 出处一次贴完）；说不出来源（本地图库）
+         时只有标题一行 —— 不留一个空的「来源：」。
     """
     from web_image_dl.app import ImageDownloaderApp
     from web_image_dl.history_manager import HistoryEntry
+    from web_image_dl.sites import cosmeitu
 
     print('\n[UI-28] 一键复制文章标题（不带日期编号）')
 
@@ -2079,6 +2089,24 @@ def test_copy_title(app):
         check('已复制' in win.status.currentMessage(),
               f'状态栏给了反馈（实测 {win.status.currentMessage()!r}）')
 
+        # ---- (b2) 有来源时多给一行来源 ----
+        # `_credit_text` 拿 images 判真假（没有图就没什么出处可言），这里塞个占位元素
+        # 即可 —— 它不看图本身，也不必为一个文本断言去走真实的网络解析。
+        win._article_author = '洛城雪Yuki'
+        win._adapter = cosmeitu
+        win.images = [object()]
+        win._update_copy_btn()
+        QApplication.processEvents()
+        cb.setText('占位')
+        win._on_copy_title()
+        eq(cb.text(), f'{full}\n图片来源：洛城雪Yuki（cosmeitu.com）',
+           '有来源时复制的是标题 + 来源两行')
+        check('图片来源' in (win.copy_title_btn.toolTip() or ''),
+              'tooltip 里两行都在（点之前就知道会多一行）')
+        win._article_author = ''
+        win._adapter = None
+        win.images = []
+
         # ---- (c) 浏览历史：从文件夹名反推，日期编号必须剥掉 ----
         win._on_browse_batch(HistoryEntry(
             id=88, source_url='https://mp.weixin.qq.com/s/COPY',
@@ -2089,6 +2117,8 @@ def test_copy_title(app):
         eq(cb.text(), '历史文章', '从历史进入时复制的是剥掉日期编号的标题')
         check(not re.match(r'^\d{4}-\d{2}-\d{2}_\d{6}', cb.text()),
               f'复制出来的名字不带日期编号（实测 {cb.text()!r}）')
+        eq(len(cb.text().splitlines()), 1,
+           '本地图库没有来源可说，只给标题一行（不留一个空的「来源：」）')
 
         # ---- (d) 重新解析：标题清空，按钮重新变灰（但还留在原位）----
         win._reset_before_parse()

@@ -149,6 +149,17 @@ CASES = [
      '        self.library_path_label.setText(self._library_root())',
      '        pass',
      '页面上显示当前图库位置', TEST_UI, 1, 'UI-30'),
+
+    # ── 复制内容（2026-10-16）：错了两处，表现都是"贴出去的东西不对" ──────
+    ('复制时丢掉来源那一行（贴出去还是只有标题）', APP,
+     "        return f'{title}\\n{credit}' if credit else title",
+     '        return title',
+     '有来源时复制的是标题 + 来源两行', TEST_UI, 1, 'UI-28'),
+
+    ('说不出来源也硬补一行（本地图库里会复制出一个空的「来源：」）', APP,
+     "        return f'{title}\\n{credit}' if credit else title",
+     "        return f'{title}\\n{credit}'",
+     '本地图库没有来源可说，只给标题一行', TEST_UI, 1, 'UI-28'),
 ]
 
 

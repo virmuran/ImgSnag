@@ -303,15 +303,26 @@ def pretty_time(iso: str) -> str:
     return f'{dt:%Y-%m-%d}'
 
 
+def build_credit_line(author: str, site: str) -> str:
+    """只要来源那一行（**不带版权提醒**）—— 「复制」用它。
+
+    与界面上那行提示同源（就是 `build_credit` 去掉提醒尾巴），并同样遵守
+    "两样都取不到就给空串"：说不出来源时复制结果**只有标题一行**，
+    不留一个空的「来源：」。
+    """
+    if not (site or author):
+        return ''
+    return credit_line(author, site)
+
+
 def build_credit(author: str, site: str) -> str:
     """界面上那行来源说明（带版权提醒）。没有站点信息时给空串，界面据此隐藏。
 
     与桌面版 `app._refresh_credit` 的拼法**逐字一致** —— 同一个东西在两端
     长相不同，用户会以为是两个功能。
     """
-    if not (site or author):
-        return ''
-    return f'{credit_line(author, site)} — {CREDIT_NOTICE}'
+    line = build_credit_line(author, site)
+    return f'{line} — {CREDIT_NOTICE}' if line else ''
 
 
 def title_from_path(path: str) -> str:
@@ -572,6 +583,9 @@ class Engine:
                 'message': self.message,
                 'title': self.title,
                 'credit': build_credit(self.author, self.site),
+                #: 只要来源那一行（不带版权提醒）—— 「复制」拼第二行用。
+                #: 两样都取不到时是空串，页面据此**只复制标题**，不留一行空的「来源：」。
+                'creditLine': build_credit_line(self.author, self.site),
                 'folder': self.folder,
                 'source': self.source,
                 'sid': self.sid,

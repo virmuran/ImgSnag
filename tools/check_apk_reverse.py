@@ -359,6 +359,21 @@ CASES = [
     ('网页拿到来源却不显示（白解析一遍）', WEBUI,
      's.credit', '0',
      '[9] 页面用到了状态里的来源字段', TEST_WEB, -1),
+
+    # ── 复制内容（2026-10-16）：手机端同样要把来源带走 ────────────────────
+    ('接口不再给纯来源行（页面复制时无从取来源）', WEB_PY,
+     "                'creditLine': build_credit_line(self.author, self.site),\n",
+     '',
+     '[15] 复制用的来源行没有署名时只写站点名', TEST_WEB),
+
+    ('复制内容里混进版权提醒（用户贴出去还得手动删一句）', WEB_PY,
+     "                'creditLine': build_credit_line(self.author, self.site),",
+     "                'creditLine': build_credit(self.author, self.site),",
+     '[15] 复制用的来源行里不含版权提醒', TEST_WEB),
+
+    ('页面复制时不再带上来源（贴出去还是只有标题）', WEBUI,
+     'st.creditLine', '0',
+     '[9] 复制时连来源一起，用的是状态里的纯来源行', TEST_WEB, -1),
 ]
 
 #: 老用例不写"跑哪个测试文件"就默认跑 test_apk_app.py —— 免得为了加个字段
