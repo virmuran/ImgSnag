@@ -2129,6 +2129,107 @@ def test_copy_title(app):
         QApplication.processEvents()
 
 
+def test_dup_parse_hint(app):
+    """重复解析提醒（UI-31）：解析过的链接再解析，结果区亮一条「之前解析过」。
+
+    用户原话：「我之前解析过一个链接，现在又遇到了，我不记得我曾经解析过」。
+    钉四件事：
+      a) 提醒是**非阻塞的一行**：不弹窗、不拦下载，解析完亮出来，新解析开始就藏；
+      b) 文案说清**什么时候、什么结果**（几张图、什么状态），数据来自上一轮的真实
+         历史记录 —— 先查后落库，查到的不能是自己这一次；
+      c) 没解析过 / 查询失败 / HTML 粘贴模式（没 URL）→ 整行藏起来，不显示半截话；
+      d) 失败的记录**不算**「解析过」—— 失败了用户多半正想再试，提醒是噪音。
+    """
+    import shutil
+
+    import web_image_dl.app as app_mod
+    from web_image_dl.app import ImageDownloaderApp
+    from web_image_dl.history_manager import HistoryManager
+
+    print('\n[UI-31] 重复解析提醒：之前解析过的链接再解析时亮出来')
+    tmp = tempfile.mkdtemp(prefix='imgsnag_dup_')
+    folder = os.path.join(tmp, '2026-10-01_090000_以前下载过的文章')
+    os.makedirs(folder)
+    with open(os.path.join(folder, 'img_01.png'), 'wb') as f:
+        f.write(png_bytes(40, 40))
+
+    hm = HistoryManager(db_path=os.path.join(tmp, 'history.db'))
+    url = 'https://mp.weixin.qq.com/s/DupMe'
+    hm.add(url, total_images=8, success_images=8, save_path=folder, status='done')
+
+    with _isolated_config():
+        win = ImageDownloaderApp()
+        win.show()
+        QApplication.processEvents()
+        real_hm = app_mod.history_manager
+        app_mod.history_manager = hm
+        try:
+            # ---- (a) 还没解析：提醒行藏着 ----
+            check(win.dup_hint.isHidden(), '初始状态提醒行不出现')
+
+            # ---- (b) 解析完成：命中上一轮记录，亮出提醒 ----
+            win._last_parsed_url = url
+            win._on_all_done([])
+            QApplication.processEvents()
+            check(not win.dup_hint.isHidden(), '解析完成且历史里有记录 → 提醒行出现')
+            text = win.dup_hint.text()
+            check('之前解析过' in text, f'提醒里点明「之前解析过」（实测 {text!r}）')
+            check('已下载' in text and '8' in text,
+                  f'文案带上次结果（几张图）—— 实测 {text!r}')
+            eq(win.dup_hint.toolTip(), f'上次保存位置：{folder}',
+               'tooltip 指向上次的保存文件夹（想知道存哪儿就去历史页看）')
+            # 先查后落库：这次解析自己也落了一条 scanned（同一行），但提醒内容
+            # 必须还是上一轮的「已下载」—— 落库不改状态（v1.8.1 行为），顺带钉住
+            eq(hm.get_all()[0].status, 'done', '落库后下载状态不被「已解析」覆盖')
+
+            # ---- (c) 没解析过的链接：整行藏起来 ----
+            win._last_parsed_url = 'https://mp.weixin.qq.com/s/NeverSeen'
+            win._on_all_done([])
+            QApplication.processEvents()
+            check(win.dup_hint.isHidden(), '没解析过的链接不提醒')
+            # HTML 粘贴模式没有 URL：同样不提醒
+            win._last_parsed_url = ''
+            win._on_all_done([])
+            QApplication.processEvents()
+            check(win.dup_hint.isHidden(), 'HTML 粘贴模式（没 URL）不提醒')
+
+            # ---- (d) 失败记录不算「解析过」 ----
+            bad = 'https://mp.weixin.qq.com/s/OnlyFailed'
+            hm.add(bad, total_images=0, success_images=0, status='failed', note='404')
+            win._last_parsed_url = bad
+            win._on_all_done([])
+            QApplication.processEvents()
+            check(win.dup_hint.isHidden(), '历史里只有失败记录 → 不提醒（用户多半正想再试）')
+
+            # ---- (e) 新解析开始：上一轮的提醒藏掉 ----
+            win._last_parsed_url = url
+            win._on_all_done([])
+            QApplication.processEvents()
+            check(not win.dup_hint.isHidden(), '回到有记录的链接，提醒重新出现')
+            win._reset_before_parse()
+            QApplication.processEvents()
+            check(win.dup_hint.isHidden(), '开始新解析时提醒先藏掉（旧提醒不再适用）')
+
+            # ---- (f) 图被用户删了：提醒还在，但尾巴要改口 ----
+            # 历史记录不会跟着文件夹一起消失（历史页对这种行标「本地已删除」）。
+            # 只说「已下载 8 张」不说下落，用户会愣住："图呢？我不是删了吗"。
+            shutil.rmtree(folder)
+            win._last_parsed_url = url
+            win._on_all_done([])
+            QApplication.processEvents()
+            check(not win.dup_hint.isHidden(), '文件夹没了 → 提醒仍然亮（历史记录还在）')
+            check('已经不在了' in win.dup_hint.text(),
+                  f'图被删了就直说下落（实测 {win.dup_hint.text()!r}）')
+            check('多存一份' not in win.dup_hint.text(),
+                  '不能再劝"别多存一份" —— 那份图已经没了，现在下就是补回来')
+            eq(win.dup_hint.toolTip(), '',
+               '图都不在了，tooltip 不再指一个空路径')
+        finally:
+            app_mod.history_manager = real_hm
+        win.close()
+        QApplication.processEvents()
+
+
 def test_update_wizard(app):
     """v1.12.0 桌面版应用内更新（UI-29）。
 
@@ -2442,6 +2543,7 @@ def main():
         ('UI-28', lambda: test_copy_title(app)),
         ('UI-29', lambda: test_update_wizard(app)),
         ('UI-30', lambda: test_settings_page(app)),
+        ('UI-31', lambda: test_dup_parse_hint(app)),
     ]
 
     only = os.environ.get('IMGSNAG_UI_ONLY', '').strip()

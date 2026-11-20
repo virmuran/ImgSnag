@@ -10,6 +10,7 @@
 import os
 import sqlite3
 from datetime import datetime
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from dataclasses import dataclass
 
 
@@ -43,6 +44,30 @@ class HistoryEntry:
         return {"done": "已下载", "scanned": "已解析", "partial": "部分成功", "failed": "失败"}.get(
             self.status, self.status
         )
+
+    def previous_hint(self):
+        """「这个链接之前解析过」提醒里那半句：什么时候、什么结果。
+
+        桌面端与安卓端的提示共用这一处文案，避免两边说法漂移。
+        失败的记录不会走到这里（find_previous 已排除），不用管。
+        """
+        d = self.parsed_at_dt
+        now = datetime.now()
+        if d == datetime.min:
+            when = "之前"
+        elif d.year == now.year:
+            when = f"{d.month}月{d.day}日 {d.hour}:{d.minute:02d}"
+        else:
+            when = f"{d.year}年{d.month}月{d.day}日"
+        if self.status == "done":
+            what = f"已下载 {self.success_images} 张"
+        elif self.status == "partial":
+            what = f"部分成功（{self.success_images}/{self.total_images} 张）"
+        elif self.status == "scanned":
+            what = "只解析过、没下载"
+        else:
+            what = self.status_text()
+        return f"{when}，{what}"
 
 
 class HistoryManager:
@@ -146,6 +171,48 @@ class HistoryManager:
                 (limit,)
             ).fetchall()
         return [HistoryEntry(*r) for r in rows]
+
+    def find_previous(self, source_url):
+        """查这个链接之前解析过的记录（排除失败），没有则返回 None。
+
+        给「这个链接之前解析过」的提醒用。**必须在 add 落库之前调** ——
+        同一 URL 只保留一行，落库之后再查，查到的就是自己这一次。
+
+        匹配走归一化：同一篇文章从微信不同入口复制，query 参数顺序
+        可能不一样，原始串直接比对会漏。库里存的原文不动，只在比对时归一。
+        """
+        target = self.normalize_url(source_url)
+        if not target:
+            return None
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, source_url, parsed_at, total_images, success_images, save_path, status, note "
+                "FROM history WHERE status != 'failed' ORDER BY parsed_at DESC LIMIT 500"
+            ).fetchall()
+        for r in rows:
+            if self.normalize_url(r[1]) == target:
+                return HistoryEntry(*r)
+        return None
+
+    @staticmethod
+    def normalize_url(url):
+        """归一化 URL，只用于「解析过没」的比对：域小写、参数排序、去锚点。
+
+        刻意不做更多：不同分享入口带来的多余参数（如微信的 chksm）保留不动 ——
+        它在正常转发路径里是稳定的，删错了反而会把两篇不同文章误判成同一篇。
+        """
+        u = str(url or "").strip()
+        if not u:
+            return ""
+        try:
+            parts = urlsplit(u)
+        except ValueError:
+            return u
+        try:
+            query = urlencode(sorted(parse_qsl(parts.query, keep_blank_values=True)))
+        except ValueError:
+            query = parts.query
+        return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path, query, ""))
 
     def delete(self, entry_id):
         """删除一条记录"""

@@ -561,6 +561,9 @@ class Engine:
         self.save_progress = {'done': 0, 'total': 0}
         self.entry_id = 0
         self.pending_share = ''
+        #: 「这个链接之前解析过」提醒（HistoryEntry.previous_hint() 拼的那句）。
+        #: 空串 = 没解析过 / 查询失败，页面据此把那行藏起来。
+        self.dup_hint = ''
         self.logs: list = []
         #: 小图体检的结果：{序号: 缩略图档字节数}。0 表示这张没拿到（不是小图）。
         self.sizes: dict = {}
@@ -586,6 +589,8 @@ class Engine:
                 #: 只要来源那一行（不带版权提醒）—— 「复制」拼第二行用。
                 #: 两样都取不到时是空串，页面据此**只复制标题**，不留一行空的「来源：」。
                 'creditLine': build_credit_line(self.author, self.site),
+                #: 非空时结果页显示「之前解析过」提醒；空串时页面把那行藏起来
+                'dupHint': self.dup_hint,
                 'folder': self.folder,
                 'source': self.source,
                 'sid': self.sid,
@@ -721,6 +726,15 @@ class Engine:
                 self.message = f'找到 {len(items)} 张图'
             self.log_line(f'标题：{title_ok}')
             self.log_line(f'共 {len(items)} 张；缩略图按需加载，选中保存时才取原图')
+
+            # 「这个链接之前解析过」提醒：**先查后落库** —— 同一 URL 在历史里
+            # 只保留一行，落库之后再查，查到的就是自己这一次。
+            try:
+                prev = self.hist.find_previous(self.source)
+            except Exception:                                       # noqa: BLE001
+                prev = None      # 查询失败只是少了条提醒，不该挡住解析结果
+            with self.lock:
+                self.dup_hint = ('⚠ 之前解析过：' + prev.previous_hint()) if prev else ''
 
             # 历史先落一条"已解析"，保存成功后同一条会被更新成"已下载"
             try:

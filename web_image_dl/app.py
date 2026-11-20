@@ -94,7 +94,7 @@ ABOUT_HTML = f"""
 解析不出来的文章、漏过的噪音图，欢迎提 Issue 并附文章链接。</p>
 
 <p><b>开源许可</b><br>
-本项目基于 <b>MIT 许可证</b>开源，可自由使用、修改与分发。</p>
+本项目基于 <b>AGPL-3.0 许可证</b>开源，可自由使用、修改与分发。</p>
 
 <p><b>第三方依赖</b><br>
 · PySide6 —— LGPLv3（Qt for Python）<br>
@@ -369,6 +369,17 @@ class ImageDownloaderApp(QMainWindow):
         self.progress = QProgressBar()
         self.progress.setVisible(False); self.progress.setTextVisible(True)
         root.addWidget(self.progress)
+
+        # 重复解析提醒：这个链接的历史里已经有记录时亮出来（见 _show_dup_hint）
+        self.dup_hint = QLabel("")
+        self.dup_hint.setWordWrap(True)
+        self.dup_hint.setStyleSheet(
+            "color: #8a5a00; font-size: 12px; "
+            "background: #fff7e6; border: 1px solid #e6c78a; "
+            "border-radius: 4px; padding: 5px 8px;"
+        )
+        self.dup_hint.hide()
+        root.addWidget(self.dup_hint)
 
         # 操作栏
         action_row = QHBoxLayout(); action_row.setSpacing(8)
@@ -1175,6 +1186,7 @@ class ImageDownloaderApp(QMainWindow):
         self._article_title = ""      # 新的一次解析，标题重新取
         self._article_author = ""     # 署名同样重取
         self.credit_label.setVisible(False)
+        self.dup_hint.hide()          # 上一轮的「之前解析过」提醒不再适用
         self._adapter = None          # 适配器同样重取（由新的 worker 决定）
         self.download_btn.setEnabled(False)
         self.select_all_btn.setEnabled(False)
@@ -1302,12 +1314,46 @@ class ImageDownloaderApp(QMainWindow):
         self._refresh_blocked()      # 命中次数变了，屏蔽面板跟着更新
 
         if self._last_parsed_url:
+            # 先查后落库：同一 URL 在历史里只保留一行，落库后再查查到的就是自己
+            prev = None
+            try:
+                prev = history_manager.find_previous(self._last_parsed_url)
+            except Exception:                                       # noqa: BLE001
+                prev = None      # 查询失败不该挡住解析结果，更不该挡住落库
+            self._show_dup_hint(prev)
             self._current_history_id = history_manager.add(
                 source_url=self._last_parsed_url,
                 total_images=len(images),
                 success_images=0,
                 status="scanned"
             )
+
+    def _show_dup_hint(self, prev):
+        """亮/灭「这个链接之前解析过」的提醒行。
+
+        prev 为 None（没解析过、查询失败、HTML 粘贴模式没 URL）就隐藏。
+        提醒是非阻塞的：不弹窗、不拦下载，只是让人知道这份图以前的下落。
+        尾巴按实际情况给三种：
+          · 文件夹还在 →「再下载会在图库多存一份」（同名副本不覆盖，但占地方）
+          · 文件夹没了（用户删了或搬走了）→ 直说图已经不在了，再下载是重新保存 ——
+            只说「已下载」不说下落，用户会愣住："图呢？我不是删了吗"
+          · 只解析过没下载 → previous_hint 那半句已经说清，不用再补
+        """
+        if prev is None:
+            self.dup_hint.hide()
+            return
+        tip = f"⚠ 这个链接之前解析过 —— {prev.previous_hint()}"
+        if prev.status in ("done", "partial") and prev.save_path:
+            if os.path.isdir(prev.save_path):
+                tip += "；再下载会在图库多存一份"
+                self.dup_hint.setToolTip(f"上次保存位置：{prev.save_path}")
+            else:
+                tip += "；不过那份图已经不在了（文件夹被删或搬走），现在下载会重新保存"
+                self.dup_hint.setToolTip("")
+        else:
+            self.dup_hint.setToolTip("")
+        self.dup_hint.setText(tip)
+        self.dup_hint.show()
 
     def _on_error(self, msg):
         self._on_parse_done(False)
@@ -1987,6 +2033,7 @@ class ImageDownloaderApp(QMainWindow):
         self._browsing_history = True
         self.progress.setVisible(False)
         self.progress.setValue(0)
+        self.dup_hint.hide()          # 浏览的是本地已存的图，不是又一次解析
         self.parse_btn.setEnabled(True)
         self.parse_btn.setText("解析图片")
         self.url_input.setEnabled(True)
@@ -2126,7 +2173,7 @@ class ImageDownloaderApp(QMainWindow):
         """关于对话框 —— 侧边栏点版本号进来，或设置页里的「关于 ImgSnag」按钮。
 
         只放用户真会看的内容：这是什么、我的数据在哪、怎么反馈、依赖了谁的代码。
-        本项目以 MIT 许可证开源，第三方依赖的许可也如实列出。
+        本项目以 AGPL-3.0 许可证开源，第三方依赖的许可也如实列出。
         设置项不在这里 —— 统一收在侧边栏「设置」页。
         """
         dlg = QDialog(self)

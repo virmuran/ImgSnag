@@ -158,6 +158,8 @@ input::placeholder{color:var(--sub)}
 @keyframes slide{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
 #bar2.det i{width:0; animation:none; transition:width .25s}
 #checkLine{font-size:12.5px; color:var(--sub); margin:8px 0 0}
+#dupHint{font-size:12.5px; color:var(--warn); margin:10px 0 0;
+  line-height:1.5; word-break:break-word}
 #creditLine{font-size:12.5px; color:var(--sub); margin:10px 0 0;
   line-height:1.5; word-break:break-word}
 
@@ -332,7 +334,7 @@ pre{font-size:11.5px; line-height:1.5; color:var(--sub); white-space:pre-wrap;
       <div class="setrow">
         <label>
           <span class="sett">开源许可</span>
-          <span class="setd">MIT 许可证，可自由使用、修改与分发</span>
+          <span class="setd">AGPL-3.0 许可证，可自由使用、修改与分发</span>
         </label>
       </div>
       <div class="setrow">
@@ -350,6 +352,7 @@ pre{font-size:11.5px; line-height:1.5; color:var(--sub); white-space:pre-wrap;
   <!-- 结果 -->
   <section id="view-result" hidden>
     <div id="status"></div>
+    <p id="dupHint" hidden></p>
     <p id="creditLine" hidden></p>
     <div id="bar2" hidden><i></i></div>
     <p id="checkLine" hidden></p>
@@ -973,6 +976,16 @@ function applyState(s){
     : (p === 'saved' ? 'ok' : (p === 'ready' ? '' : 'busy')));
   if (p !== 'idle'){
     status.textContent = s.message || '';
+  }
+
+  // 重复解析提醒：这个链接之前解析过（历史里有记录）时显示。
+  // 后端查不到或查询失败给空串，这里就把整行藏起来 —— 宁可没有提醒，不显示半截话。
+  var dupHint = $('#dupHint');
+  if (p !== 'idle' && s.dupHint){
+    dupHint.textContent = s.dupHint;
+    dupHint.hidden = false;
+  } else {
+    dupHint.hidden = true;
   }
 
   // 来源与版权提示：解析出来之后一直显示，换一篇文章就跟着换。

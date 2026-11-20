@@ -131,6 +131,68 @@ def test_distinct_urls():
     eq(_row(hm, URL).status, 'done', '原记录不受影响')
 
 
+def test_find_previous_hits():
+    print('\n[HIS-7] find_previous：查「之前解析过」的记录')
+    hm = _temp_hm()
+    eq(hm.find_previous(URL), None, '空库里查 = 没解析过')
+    folder = os.path.join(tempfile.gettempdir(), 'imgsnag_prev_batch')
+    hm.add(URL, total_images=8, success_images=8, save_path=folder, status='done')
+    prev = hm.find_previous(URL)
+    check(prev is not None, '已有记录能查到')
+    eq(prev.status, 'done', '查到的是那条下载记录')
+    # 同一 URL 只保留一行 —— 先查后落库的顺序在界面层保证，这里验证查到的
+    # 不是"自己刚落的"，落库前查到的必然是上一轮的旧记录
+    eq(prev.source_url, URL, 'URL 对得上')
+    # 失败的记录不算「解析过」：失败了用户多半正想再试
+    hm2 = _temp_hm()
+    hm2.add(URL, total_images=0, success_images=0, status='failed', note='404')
+    eq(hm2.find_previous(URL), None, 'failed 记录不提醒')
+    eq(hm2.find_previous(''), None, '空 URL 直接返回 None')
+
+
+def test_find_previous_normalizes():
+    print('\n[HIS-8] 参数顺序不同的同一篇文章也能对上（归一化比对）')
+    hm = _temp_hm()
+    hm.add('https://mp.weixin.qq.com/s?__biz=MzA1&mid=2247&idx=1&sn=abc',
+           total_images=6, success_images=6,
+           save_path=tempfile.gettempdir(), status='done')
+    # 同一篇从另一个入口复制：参数顺序不同
+    shuffled = hm.find_previous(
+        'https://mp.weixin.qq.com/s?idx=1&mid=2247&sn=abc&__biz=MzA1')
+    check(shuffled is not None, '参数排序后能命中')
+    # 不同文章不能误判
+    other = hm.find_previous(
+        'https://mp.weixin.qq.com/s?__biz=MzA1&mid=2247&idx=1&sn=xyz')
+    eq(other, None, 'sn 不同 = 另一篇文章，不误报')
+    # 大小写域名 / 带锚点也归一
+    noisy = hm.find_previous(
+        'HTTPS://MP.WEIXIN.QQ.COM/s?__biz=MzA1&mid=2247&idx=1&sn=abc#imgIndex=2')
+    check(noisy is not None, '域名大小写与锚点不碍事')
+    # 归一化是纯比对用的，库里存的原文不动
+    eq(hm.get_all()[0].source_url,
+       'https://mp.weixin.qq.com/s?__biz=MzA1&mid=2247&idx=1&sn=abc',
+       '库里的原始 URL 原样保留')
+
+
+def test_previous_hint_text():
+    print('\n[HIS-9] previous_hint：提醒文案（两端共用这一处）')
+    hm = _temp_hm()
+    folder = os.path.join(tempfile.gettempdir(), 'imgsnag_hint_batch')
+    hm.add(URL, total_images=8, success_images=8, save_path=folder, status='done')
+    tip = hm.find_previous(URL).previous_hint()
+    check('已下载 8 张' in tip, f'下载过的说张数 —— {tip}')
+    check('月' in tip and '日' in tip, f'时间用「几月几日」的人话 —— {tip}')
+
+    hm.add('https://mp.weixin.qq.com/s/Scan2', total_images=5, status='scanned')
+    tip2 = hm.find_previous('https://mp.weixin.qq.com/s/Scan2').previous_hint()
+    check('只解析过、没下载' in tip2, f'没下载过的直说 —— {tip2}')
+
+    hm.add('https://mp.weixin.qq.com/s/Part3', total_images=6, success_images=4,
+           status='partial')
+    tip3 = hm.find_previous('https://mp.weixin.qq.com/s/Part3').previous_hint()
+    check('4/6' in tip3 and '部分成功' in tip3, f'部分成功的说比例 —— {tip3}')
+
+
 def main():
     test_reparse_preserves_done()
     test_reparse_preserves_partial()
@@ -138,6 +200,9 @@ def main():
     test_no_download_still_overwrites()
     test_download_update_after_reparse()
     test_distinct_urls()
+    test_find_previous_hits()
+    test_find_previous_normalizes()
+    test_previous_hint_text()
     print(f'\n{"=" * 46}')
     print(f'通过 {_passed} 项，失败 {len(_failed)} 项')
     if _failed:

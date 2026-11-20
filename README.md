@@ -13,7 +13,7 @@
     <img alt="deps" src="https://img.shields.io/badge/%E4%BE%9D%E8%B5%96-requests%20%2B%20PySide6--Essentials-blue">
 </div>
 <div>
-    <img alt="version" src="https://img.shields.io/badge/version-2.3.0-green">
+    <img alt="version" src="https://img.shields.io/badge/version-2.4.0-green">
     <img alt="stars" src="https://img.shields.io/github/stars/virmuran/ImgSnag?style=social">
 </div>
 <br>
@@ -131,6 +131,8 @@ python -m venv .venv
 把**文章链接**（例：`https://mp.weixin.qq.com/s/...`）粘进输入框，点「解析图片」或按 `Ctrl+Enter`。粘贴内容中混有其他分享文字不影响解析，链接会被自动提取。
 
 少数情况无法直接解析时，可改用 HTML 源码模式：浏览器按 `F12` → 元素面板 → 右键 `<html>` → 复制 → **复制 outerHTML**，粘进同一个输入框后点「解析图片」；「粘贴HTML」按钮可直接从剪贴板读入。
+
+解析过的链接再遇到时不用凭记忆：结果区会提醒「之前解析过」，带上次的时间与结果（下载了几张、图还在不在）；不弹窗、不拦下载，只是提个醒。
 
 ### 2. 挑选
 
@@ -296,5 +298,5 @@ v1.8.2 起已修复。此类网络会做 TLS 转发（用自装根证书重新�
 
 ## 许可
 
-本项目基于 [MIT 许可证](LICENSE) 开源，欢迎自由使用与二次开发。
+本项目基于 [AGPL-3.0 许可证](LICENSE) 开源：可自由使用，修改与二次开发后的版本同样需以 AGPL-3.0 开源。
 

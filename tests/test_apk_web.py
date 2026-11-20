@@ -888,6 +888,9 @@ def test_credit_and_referer():
         check('版权' not in st.get('creditLine', ''),
               '复制用的来源行里不含版权提醒')
 
+        # 「之前解析过」提醒：这个临时库里 ARTICLE_URL 是头一回 → 不提醒
+        eq(st.get('dupHint'), '', f'首次解析（历史里没这条）不提醒：{st.get("dupHint")!r}')
+
         net.reset()
         cli.post('/api/save', {'idxs': [1, 2]})
         cli.wait(want=('saved', 'error'))
@@ -945,6 +948,18 @@ def test_credit_and_referer():
               f'换了文章之后不残留上一篇的来源：{st.get("credit")!r}')
         check('cosmeitu' not in st.get('creditLine', ''),
               f'复制用的来源行同样跟着换：{st.get("creditLine")!r}')
+
+        # ── 同一链接第二次解析：亮「之前解析过」提醒 ──
+        # 上一轮（892 行）已经把 ARTICLE_URL 存成 done，这次解析查历史应命中。
+        # 提醒内容必须来自**上一轮**的记录（先查后落库），文案带时间与结果。
+        dup = st.get('dupHint', '')
+        check('之前解析过' in dup, f'重复解析同一链接时亮提醒（实测 {dup!r}）')
+        check('已下载' in dup, f'提醒说清上次的结果（已下载几张）（实测 {dup!r}）')
+        # 这次的落库不许把它改成"已解析、没下载"（v1.8.1 行为，顺带钉住）
+        wx_row = [r for r in cli.json('/api/history')['items']
+                  if r.get('url') == ARTICLE_URL]
+        check(wx_row and wx_row[0].get('status_text') == '已下载',
+              '重复解析后历史里那条仍是「已下载」')
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -1358,6 +1373,14 @@ def test_page_contract():
     check('s.credit' in page, '页面用到了状态里的来源字段')
     check(re.search(r"credit\.hidden\s*=", page) is not None,
           '来源行能隐藏（取不到站点信息时不显示一行空的）')
+
+    # 重复解析提醒（桌面版同款）：之前解析过的链接再解析时亮一行。
+    # ⚠ 同样带上下文比对：裸写 `'dupHint' in page` 会被 id 名以外的字符串蹭过。
+    check('id="dupHint"' in page, '结果页有「之前解析过」提醒那一行')
+    check('s.dupHint' in page, '页面用到了状态里的提醒字段')
+    check(re.search(r'dupHint\.hidden\s*=', page) is not None,
+          '提醒行能隐藏（没解析过 / 查询失败时不显示半截话）')
+    check('#dupHint{' in page, '提醒行有自己的样式（提醒是黄字，不是错误红）')
 
     # 大图要能左右滑（用户实测反馈："只能返回再点第二张"）
     # ⚠ 一律带引号或括号一起比对：裸写 `'touchstart' in page`，
